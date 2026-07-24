@@ -1,4 +1,4 @@
-const WORKER_API_URL = "https://workers.dev";
+const WORKER_API_URL = "https://recipe-scraper-backend.bigdawgdigitalassets.workers.dev";
 
 let currentIngredientsArray = [];
 
@@ -18,22 +18,19 @@ document.getElementById("extract-btn").addEventListener("click", async () => {
     outputDiv.style.display = "none";
 
     try {
-        console.log("Sending outbound fetch parameters to edge gateway:", WORKER_API_URL);
+        console.log("Routing request sequence to destination gateway:", WORKER_API_URL);
         
-        // Explicitly format a bare payload object to pass safely through browser runtime checks
         const response = await fetch(WORKER_API_URL, {
             method: "POST",
-            mode: "cors", // Explicitly instruct the browser to allow Cross-Origin Resource Sharing
             headers: { 
-                "Content-Type": "text/plain" // Using text/plain avoids triggering aggressive preflight blocks
+                "Content-Type": "application/json"
             },
             body: JSON.stringify({ recipeUrl: targetUrl })
         });
 
-        console.log("Network status received back from edge:", response.status);
         const data = await response.json();
 
-        if (!response.ok) throw new Error(data.error || `Server responded with status ${response.status}`);
+        if (!response.ok) throw new Error(data.error || `Server error status: ${response.status}`);
 
         currentIngredientsArray = data.ingredients;
         document.getElementById("scale-select").value = "1";
@@ -43,8 +40,8 @@ document.getElementById("extract-btn").addEventListener("click", async () => {
         outputDiv.style.display = "block";
 
     } catch (error) {
-        console.error("Verbose Network Breakdown Log:", error);
-        alert(`Extraction Failed: ${error.message}\n\nCheck your browser Console (F12) for detailed logs.`);
+        console.error("Network Exception Event:", error);
+        alert(`Extraction Failed: ${error.message}`);
     } finally {
         extractBtn.textContent = "Extract recipe";
         extractBtn.disabled = false;

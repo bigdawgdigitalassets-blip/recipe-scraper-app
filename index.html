@@ -12,11 +12,12 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
+            min-height: 100vh;
             margin: 0;
         }
         .container {
             text-align: center;
+            width: 100%;
             max-width: 600px;
             padding: 20px;
         }
@@ -55,24 +56,45 @@
             padding: 15px;
             border-radius: 6px;
             display: none;
-            max-height: 300px;
-            overflow-y: auto;
+        }
+        select {
+            padding: 6px 12px;
+            background: #0b132b;
+            color: white;
+            border: 1px solid #57606f;
+            border-radius: 4px;
+            font-size: 0.9rem;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Recipe Scraper</h1>
-        <p>Paste a recipe URL. Get just the recipe — no life story, no pop-ups.</p>
-
+        <p>Paste an Allrecipes URL to instantly view the layout.</p>
+        
         <div class="input-group">
-            <input type="text" id="recipe-url" placeholder="https://example.com/best-chocolate-chip-cookies">
+            <input type="text" id="recipe-url" placeholder="https://allrecipes.com...">
             <button id="extract-btn">Extract recipe</button>
         </div>
 
-        <div id="recipe-output"></div>
+        <div id="recipe-output">
+            <h3 id="recipe-title"></h3>
+            
+            <div style="margin: 15px 0; background: #0b132b; padding: 12px; border-radius: 4px; display: flex; align-items: center; gap: 10px;">
+                <label for="scale-select" style="font-weight: bold;">Scale Recipe Size:</label>
+                <select id="scale-select">
+                    <option value="0.5">Half Size (0.5x)</option>
+                    <option value="1" selected>Original (1x)</option>
+                    <option value="2">Double Size (2x)</option>
+                    <option value="3">Triple Size (3x)</option>
+                </select>
+            </div>
 
-        <div class="footer">Respect each site's terms of use. For personal use.</div>
+            <strong>Ingredients:</strong>
+            <ul id="ingredients-list"></ul>
+        </div>
+
+        <div class="footer">For personal educational extraction purposes.</div>
     </div>
 
     <script src="app.js"></script>
