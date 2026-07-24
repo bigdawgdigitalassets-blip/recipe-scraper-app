@@ -1,4 +1,5 @@
-const WORKER_API_URL = "https://recipe-scraper-backend.bigdawgdigitalassets.workers.dev";
+// A public CORS proxy bridge to bypass data-center IP blocks
+const CORS_PROXY = "https://herokuapp.com";
 
 let currentIngredientsArray = [];
 
@@ -6,11 +7,16 @@ document.getElementById("extract-btn").addEventListener("click", async () => {
     const urlInput = document.getElementById("recipe-url");
     const extractBtn = document.getElementById("extract-btn");
     const outputDiv = document.getElementById("recipe-output");
-    const targetUrl = urlInput.value.trim();
+    let targetUrl = urlInput.value.trim();
 
     if (!targetUrl) {
         alert("Please enter a valid recipe URL first!");
         return;
+    }
+
+    // Ensure the user-pasted string has a proper HTTP protocol prefix
+    if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
+        targetUrl = "https://" + targetUrl;
     }
 
     extractBtn.textContent = "Scraping...";
@@ -18,29 +24,68 @@ document.getElementById("extract-btn").addEventListener("click", async () => {
     outputDiv.style.display = "none";
 
     try {
-        console.log("Routing request sequence to destination gateway:", WORKER_API_URL);
-        
-        const response = await fetch(WORKER_API_URL, {
-            method: "POST",
-            headers: { 
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ recipeUrl: targetUrl })
+        // Route request through the proxy bridge to bypass the 403 block
+        const proxyUrl = CORS_PROXY + targetUrl;
+        console.log("Fetching webpage via proxy bridge:", proxyUrl);
+
+        const response = await fetch(proxyUrl, {
+            headers: {
+                "X-Requested-With": "XMLHttpRequest"
+            }
         });
 
-        const data = await response.json();
+        if (!response.ok) {
+            if (response.status === 403) {
+                throw new Error("CORS Proxy requires temporary activation. Please visit https://herokuapp.com and click 'Opt In'.");
+            }
+            throw new Error(`Proxy gateway responded with status: ${response.status}`);
+        }
 
-        if (!response.ok) throw new Error(data.error || `Server error status: ${response.status}`);
-
-        currentIngredientsArray = data.ingredients;
-        document.getElementById("scale-select").value = "1";
-        document.getElementById("recipe-title").textContent = data.title;
-        renderScaledIngredients(1); 
+        const htmlContent = await response.text();
         
+        // Locate and extract the LD+JSON schema block natively in-browser
+        const regex = /<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+        let match;
+        let recipeData = null;
+
+        while ((match = regex.exec(htmlContent)) !== null) {
+            try {
+                const parsed = JSON.parse(match[1].trim());
+                const items = Array.isArray(parsed) ? parsed : [parsed];
+                for (const item of items) {
+                    if (item["@type"] === "Recipe" || (Array.isArray(item["@type"]) && item["@type"].includes("Recipe"))) {
+                        recipeData = item;
+                        break;
+                    } else if (item["@graph"] && Array.isArray(item["@graph"])) {
+                        for (const subItem of item["@graph"]) {
+                            if (subItem["@type"] === "Recipe") {
+                                recipeData = subItem;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (recipeData) break;
+            } catch (e) {
+                // Ignore invalid or unparseable JSON-LD blocks
+            }
+        }
+
+        if (!recipeData) {
+            throw new Error("Could not locate a clean recipe metadata template on this page.");
+        }
+
+        // Map values into state memory
+        currentIngredientsArray = recipeData.recipeIngredient || [];
+        document.getElementById("scale-select").value = "1";
+        document.getElementById("recipe-title").textContent = recipeData.name || "Scraped Recipe";
+        
+        // Execute initial text render
+        renderScaledIngredients(1); 
         outputDiv.style.display = "block";
 
     } catch (error) {
-        console.error("Network Exception Event:", error);
+        console.error("Scraping Breakdown:", error);
         alert(`Extraction Failed: ${error.message}`);
     } finally {
         extractBtn.textContent = "Extract recipe";
