@@ -1,6 +1,3 @@
-// Ensure the string ends exactly with /?url=
-const CORS_PROXY = "https://corsproxy.io";
-
 let currentIngredientsArray = [];
 
 document.getElementById("extract-btn").addEventListener("click", async () => {
@@ -23,9 +20,9 @@ document.getElementById("extract-btn").addEventListener("click", async () => {
     outputDiv.style.display = "none";
 
     try {
-        // Encode the URL cleanly to make sure formatting marks don't break the proxy path
-        const proxyUrl = CORS_PROXY + encodeURIComponent(targetUrl);
-        console.log("Routing traffic via corsproxy engine:", proxyUrl);
+        // Constructing the exact absolute URL cleanly to bypass string concatenation errors
+        const proxyUrl = "https://corsproxy.io/" + encodeURIComponent(targetUrl);
+        console.log("Routing traffic via absolute proxy engine:", proxyUrl);
 
         const response = await fetch(proxyUrl);
 
@@ -35,7 +32,6 @@ document.getElementById("extract-btn").addEventListener("click", async () => {
 
         const htmlContent = await response.text();
         
-        // Target and extract the structured schema scripts inside the HTML shell
         const regex = /<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
         let match;
         let recipeData = null;
@@ -58,9 +54,7 @@ document.getElementById("extract-btn").addEventListener("click", async () => {
                     }
                 }
                 if (recipeData) break;
-            } catch (e) {
-                // Skip mismatched structural scripts
-            }
+            } catch (e) {}
         }
 
         if (!recipeData) {
