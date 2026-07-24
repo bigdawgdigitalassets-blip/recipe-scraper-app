@@ -1,4 +1,4 @@
-// A reliable, registration-free proxy engine to handle cross-origin network operations
+// Ensure the string ends exactly with /?url=
 const CORS_PROXY = "https://corsproxy.io";
 
 let currentIngredientsArray = [];
