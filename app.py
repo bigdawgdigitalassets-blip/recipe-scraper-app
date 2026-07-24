@@ -1,7 +1,14 @@
 from flask import Flask, request, jsonify, render_template_string
-from recipe_scrapers import scrape_me
 import os
 
+# New, safe import routing for recipe-scrapers library versions
+try:
+    from recipe_scrapers._factory import SchemaScraperFactory as scrape_me
+except ImportError:
+    try:
+        from recipe_scrapers import scrape_me
+    except ImportError:
+        from recipe_scrapers import scraper as scrape_me
 app = Flask(__name__)
 
 # Basic Dark-Themed UI template built straight into the Python server
