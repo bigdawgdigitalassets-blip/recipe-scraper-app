@@ -1,11 +1,10 @@
 from flask import Flask, request, jsonify, render_template_string
-import requests
+from curl_cffi import requests as b_requests
 from recipe_scrapers import scrape_html
 import os
 
 app = Flask(__name__)
 
-# Basic Dark-Themed UI template built straight into the Python server
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -31,7 +30,7 @@ HTML_TEMPLATE = """
         <h1>Recipe Scraper</h1>
         <p>Powered by Python & Render.</p>
         <div class="input-group">
-            <input type="text" id="recipe-url" placeholder="https://www.allrecipes.com/recipe/...">
+            <input type="text" id="recipe-url" placeholder="https://allrecipes.com...">
             <button id="extract-btn">Extract recipe</button>
         </div>
         <div id="recipe-output">
@@ -99,15 +98,15 @@ HTML_TEMPLATE = """
                 let text = ing;
                 const match = ing.match(/^(\d+\s+\d+\/\d+|\d+\/\d+|\d+\.\d+|\d+)/);
                 if (match) {
-                    const numStr = match[0];
+                    const numStr = match;
                     let val = 0;
                     if (numStr.includes(' ') && numStr.includes('/')) {
                         const parts = numStr.split(/\s+/);
-                        const frac = parts[1].split('/');
-                        val = parseInt(parts[0]) + (parseInt(frac[0]) / parseInt(frac[1]));
+                        const frac = parts.split('/');
+                        val = parseInt(parts) + (parseInt(frac) / parseInt(frac));
                     } else if (numStr.includes('/')) {
                         const frac = numStr.split('/');
-                        val = parseInt(frac[0]) / parseInt(frac[1]);
+                        val = parseInt(frac) / parseInt(frac);
                     } else {
                         val = parseFloat(numStr);
                     }
@@ -136,16 +135,16 @@ def scrape_endpoint():
         if not target_url:
             return jsonify({"error": "Missing URL parameter"}), 400
 
-        # Download the HTML directly using a clean browser signature layout
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
-        response = requests.get(target_url, headers=headers, timeout=10)
+        # Execute fetch with curl_cffi impersonating a true Chrome browser architecture
+        response = b_requests.get(
+            target_url, 
+            impersonate="chrome", 
+            timeout=15
+        )
         
         if response.status_code != 200:
             return jsonify({"error": f"Failed to download page. Status code: {response.status_code}"}), 502
 
-        # Pass the downloaded text and source details to the parser engine
         scraper = scrape_html(html=response.text, org_url=target_url, wild_mode=True)
         
         return jsonify({
