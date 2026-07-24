@@ -1,5 +1,5 @@
-// A public CORS proxy bridge to bypass data-center IP blocks
-const CORS_PROXY = "https://herokuapp.com";
+// A reliable, registration-free proxy engine to handle cross-origin network operations
+const CORS_PROXY = "https://corsproxy.io";
 
 let currentIngredientsArray = [];
 
@@ -14,7 +14,6 @@ document.getElementById("extract-btn").addEventListener("click", async () => {
         return;
     }
 
-    // Ensure the user-pasted string has a proper HTTP protocol prefix
     if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
         targetUrl = "https://" + targetUrl;
     }
@@ -24,33 +23,26 @@ document.getElementById("extract-btn").addEventListener("click", async () => {
     outputDiv.style.display = "none";
 
     try {
-        // Route request through the proxy bridge to bypass the 403 block
-        const proxyUrl = CORS_PROXY + targetUrl;
-        console.log("Fetching webpage via proxy bridge:", proxyUrl);
+        // Encode the URL cleanly to make sure formatting marks don't break the proxy path
+        const proxyUrl = CORS_PROXY + encodeURIComponent(targetUrl);
+        console.log("Routing traffic via corsproxy engine:", proxyUrl);
 
-        const response = await fetch(proxyUrl, {
-            headers: {
-                "X-Requested-With": "XMLHttpRequest"
-            }
-        });
+        const response = await fetch(proxyUrl);
 
         if (!response.ok) {
-            if (response.status === 403) {
-                throw new Error("CORS Proxy requires temporary activation. Please visit https://herokuapp.com and click 'Opt In'.");
-            }
-            throw new Error(`Proxy gateway responded with status: ${response.status}`);
+            throw new Error(`Proxy network returned validation error state: ${response.status}`);
         }
 
         const htmlContent = await response.text();
         
-        // Locate and extract the LD+JSON schema block natively in-browser
+        // Target and extract the structured schema scripts inside the HTML shell
         const regex = /<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
         let match;
         let recipeData = null;
 
         while ((match = regex.exec(htmlContent)) !== null) {
             try {
-                const parsed = JSON.parse(match[1].trim());
+                const parsed = JSON.parse(match.trim());
                 const items = Array.isArray(parsed) ? parsed : [parsed];
                 for (const item of items) {
                     if (item["@type"] === "Recipe" || (Array.isArray(item["@type"]) && item["@type"].includes("Recipe"))) {
@@ -67,25 +59,23 @@ document.getElementById("extract-btn").addEventListener("click", async () => {
                 }
                 if (recipeData) break;
             } catch (e) {
-                // Ignore invalid or unparseable JSON-LD blocks
+                // Skip mismatched structural scripts
             }
         }
 
         if (!recipeData) {
-            throw new Error("Could not locate a clean recipe metadata template on this page.");
+            throw new Error("Could not parse structured recipe data from this webpage layout.");
         }
 
-        // Map values into state memory
         currentIngredientsArray = recipeData.recipeIngredient || [];
         document.getElementById("scale-select").value = "1";
         document.getElementById("recipe-title").textContent = recipeData.name || "Scraped Recipe";
         
-        // Execute initial text render
         renderScaledIngredients(1); 
         outputDiv.style.display = "block";
 
     } catch (error) {
-        console.error("Scraping Breakdown:", error);
+        console.error("Scraper Engine Breakdown Log:", error);
         alert(`Extraction Failed: ${error.message}`);
     } finally {
         extractBtn.textContent = "Extract recipe";
@@ -107,17 +97,17 @@ function renderScaledIngredients(factor) {
         const match = ingredientStr.match(numberRegex);
 
         if (match) {
-            const originalNumStr = match[0];
+            const originalNumStr = match;
             let decimalValue = 0;
 
             if (originalNumStr.includes(' ') && originalNumStr.includes('/')) {
                 const parts = originalNumStr.split(/\s+/);
-                const whole = parseInt(parts[0], 10);
-                const fracParts = parts[1].split('/');
-                decimalValue = whole + (parseInt(fracParts[0], 10) / parseInt(fracParts[1], 10));
+                const whole = parseInt(parts, 10);
+                const fracParts = parts.split('/');
+                decimalValue = whole + (parseInt(fracParts, 10) / parseInt(fracParts, 10));
             } else if (originalNumStr.includes('/')) {
                 const fracParts = originalNumStr.split('/');
-                decimalValue = parseInt(fracParts[0], 10) / parseInt(fracParts[1], 10);
+                decimalValue = parseInt(fracParts, 10) / parseInt(fracParts, 10);
             } else {
                 decimalValue = parseFloat(originalNumStr);
             }
