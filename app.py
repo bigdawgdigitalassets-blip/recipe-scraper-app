@@ -1,9 +1,13 @@
 from flask import Flask, request, jsonify, render_template_string
 from curl_cffi import requests as b_requests
 from recipe_scrapers import scrape_html
+import json
 import os
 
 app = Flask(__name__)
+
+# Page source posted by the bookmarklet can be a megabyte or more.
+app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -29,6 +33,11 @@ HTML_TEMPLATE = """
         .actions { display: flex; gap: 10px; margin-top: 20px; }
         .actions button { flex: 1; font-size: 0.9rem; padding: 10px; }
         ol li, ul li { margin-bottom: 8px; line-height: 1.4; }
+        #bookmarklet-box { text-align: left; background: #12203f; border: 1px solid #2d4373; padding: 15px; border-radius: 6px; margin-top: 30px; }
+        #bookmarklet-box h4 { margin: 0 0 8px 0; }
+        #bookmarklet-box p, #bookmarklet-box li { color: #a5b1c2; font-size: 0.9rem; margin: 6px 0; }
+        .bm-link { display: inline-block; background: #ffd166; color: #0b132b; padding: 10px 18px; border-radius: 4px; font-weight: bold; text-decoration: none; margin: 8px 0; cursor: grab; }
+        .banner-error { background: #2a080c; border: 1px solid #d63031; color: #ff7675; padding: 12px; border-radius: 6px; margin-bottom: 15px; text-align: left; }
         @media print {
             body { background: #fff; color: #000; display: block; }
             .input-group, #fallback-container, .actions, .no-print, h1 + p { display: none !important; }
@@ -42,6 +51,8 @@ HTML_TEMPLATE = """
         <h1>Recipe Scraper</h1>
         <p>Paste a recipe URL to get a clean, printable, scalable recipe.</p>
 
+        <div class="banner-error no-print" id="error-banner" style="display: __ERROR_DISPLAY__;">__ERROR_TEXT__</div>
+
         <div class="input-group">
             <input type="text" id="recipe-url" placeholder="https://www.allrecipes.com/recipe/...">
             <button id="extract-btn">Extract recipe</button>
@@ -50,7 +61,8 @@ HTML_TEMPLATE = """
         <!-- Hidden container that triggers if Cloudflare blocks the network fetch -->
         <div id="fallback-container">
             <strong style="color: #ff7675;">Firewall Blocked:</strong>
-            <p style="font-size: 0.9rem; margin: 5px 0 12px 0;">The site blocked our server. To bypass it: open the recipe link in a new tab, right-click anywhere, select <strong>"View Page Source"</strong>, copy everything (Ctrl+A, Ctrl+C), and paste it below:</p>
+            <p style="font-size: 0.9rem; margin: 5px 0 12px 0;">This site blocked our server. The easiest fix is the <strong>Grab Recipe bookmarklet</strong> at the bottom of this page &mdash; one click and the recipe opens here automatically.</p>
+            <p style="font-size: 0.9rem; margin: 5px 0 12px 0;">Or do it manually: open the recipe, right-click anywhere, select <strong>"View Page Source"</strong>, copy everything (Ctrl+A, Ctrl+C), and paste it below:</p>
             <textarea id="raw-html-input" placeholder="Paste raw page source HTML code text here..."></textarea>
             <button id="fallback-btn" style="background-color: #ff7675; color: white; width: 100%;">Parse Pasted HTML Code</button>
         </div>
@@ -79,9 +91,21 @@ HTML_TEMPLATE = """
                 <button id="print-btn">Print recipe</button>
             </div>
         </div>
+
+        <div id="bookmarklet-box" class="no-print">
+            <h4>Blocked by a site? Use the bookmarklet.</h4>
+            <p>Some sites (Allrecipes, Food Network) block automated servers. This button runs in <em>your</em> browser instead, so there is nothing to block.</p>
+            <p><strong>Setup (once):</strong> show your bookmarks bar with <code>Ctrl+Shift+B</code>, then drag this button onto it:</p>
+            <p><a class="bm-link" href="__BOOKMARKLET__">Grab Recipe</a></p>
+            <p><strong>Use:</strong> open any recipe page, click <strong>Grab Recipe</strong> in your bookmarks bar. The recipe opens here, ready to scale and print.</p>
+            <p style="font-size: 0.8rem; color: #6c7a91;">Clicking the button here does nothing &mdash; it only works once dragged to your bookmarks bar.</p>
+        </div>
     </div>
 
     <script>
+        // Populated server-side by /import when the bookmarklet posts a page.
+        const PRELOAD = __PRELOAD_JSON__;
+
         let currentIngredients = [];
         let currentInstructions = [];
         let currentScale = 1;
@@ -262,15 +286,101 @@ HTML_TEMPLATE = """
         });
 
         document.getElementById("print-btn").addEventListener("click", () => window.print());
+
+        // If the bookmarklet delivered a recipe, show it straight away.
+        if (PRELOAD) {
+            handleScrapeSuccess(PRELOAD, document.getElementById("recipe-output"));
+            if (PRELOAD.source_url) document.getElementById("recipe-url").value = PRELOAD.source_url;
+        }
     </script>
 </body>
 </html>
 """
 
 
+def app_base_url():
+    """Public base URL of this app, forced to https outside local dev."""
+    base = request.url_root.rstrip("/")
+    if base.startswith("http://") and not any(
+        h in base for h in ("localhost", "127.0.0.1")
+    ):
+        base = "https://" + base[len("http://"):]
+    return base
+
+
+def make_bookmarklet(base_url):
+    """
+    A form POST (not fetch) so it survives the target site's Content-Security-Policy,
+    needs no CORS headers, and is not caught by the popup blocker.
+    """
+    js = (
+        "javascript:(function(){"
+        "try{"
+        "var f=document.createElement('form');"
+        "f.method='POST';"
+        "f.action='%s/import';"
+        "f.target='_blank';"
+        "f.style.display='none';"
+        "var h=document.createElement('input');"
+        "h.type='hidden';h.name='html';"
+        "h.value=document.documentElement.outerHTML;"
+        "f.appendChild(h);"
+        "var u=document.createElement('input');"
+        "u.type='hidden';u.name='url';u.value=location.href;"
+        "f.appendChild(u);"
+        "document.body.appendChild(f);"
+        "f.submit();"
+        "setTimeout(function(){f.parentNode&&f.parentNode.removeChild(f);},2000);"
+        "}catch(e){alert('Grab Recipe failed: '+e.message);}"
+        "})();" % base_url
+    )
+    # Escape only what would break out of the href="" attribute.
+    return js.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;")
+
+
+def render_page(preload=None, error=None):
+    payload = json.dumps(preload) if preload else "null"
+    # Prevent a literal </script> inside recipe text from closing the script block.
+    payload = payload.replace("</", "<\\/")
+
+    html = HTML_TEMPLATE
+    html = html.replace("__PRELOAD_JSON__", payload)
+    html = html.replace("__BOOKMARKLET__", make_bookmarklet(app_base_url()))
+    html = html.replace("__ERROR_DISPLAY__", "block" if error else "none")
+    html = html.replace("__ERROR_TEXT__", (error or "").replace("<", "&lt;"))
+    return html
+
+
 @app.route("/")
 def home():
-    return render_template_string(HTML_TEMPLATE)
+    return render_page()
+
+
+@app.route("/import", methods=["POST"])
+def import_from_bookmarklet():
+    """Receives page source posted by the bookmarklet from the user's own browser."""
+    raw_html = request.form.get("html", "")
+    source_url = request.form.get("url", "") or "https://www.allrecipes.com/"
+
+    if not raw_html:
+        return render_page(error="The bookmarklet sent no page content. Try again."), 400
+
+    try:
+        scraper = scrape_html(html=raw_html, org_url=source_url, wild_mode=True)
+        payload = build_payload(scraper)
+    except Exception as e:
+        return render_page(
+            error=f"Could not find a recipe on that page. ({e})"
+        ), 200
+
+    if not payload.get("ingredients"):
+        return render_page(
+            error="That page loaded, but no ingredients were found on it. "
+                  "Make sure you clicked the bookmarklet on the recipe page itself."
+        ), 200
+
+    payload["source_url"] = source_url
+    return render_page(preload=payload)
 
 
 def build_payload(scraper):
